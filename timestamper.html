@@ -1,0 +1,115 @@
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <link href="styles.css" rel="stylesheet" type="text/css">
+  <title>Timestamper</title>
+</head>
+
+<body>
+  <span id="display"></span>
+  <script type="application/javascript">
+    class FrameRateEstimator {
+      static MIN_FRAMES_NEEDED = 30;
+      static MIN_MILLISECONDS_NEEDED = 2000;
+      static FRAMES_TRIM_RATIO = 10;
+      static MAX_ALLOWED_FRAMETIME_FLAKINESS = 1.0;
+      static MAX_ALLOWED_FPS_DEVIATION = 0.25;
+      static FPS_OPTIONS = [24, 25, 30, 48, 50, 60, 75, 90, 100, 120, 144];
+
+      constructor() {
+        this.estimatedRealFps = null;
+
+        this.clearSamples();
+      }
+
+      // Returns frame rate
+      newFrame(timestampMs) {
+        if (this.startTimeMs === null) {
+          this.startTimeMs = timestampMs;
+        }
+        if (this.lastFrameTimeMs !== null) {
+          const frameDurationMs = timestampMs - this.lastFrameTimeMs;
+          this.frameDurations.push(frameDurationMs);
+          if (this.frameDurations.length >= FrameRateEstimator.MIN_FRAMES_NEEDED
+            && timestampMs - this.startTimeMs >= FrameRateEstimator.MIN_MILLISECONDS_NEEDED) {
+              this.frameDurations.sort();
+              const framesToTrim = Math.trunc(this.frameDurations.length / FrameRateEstimator.FRAMES_TRIM_RATIO);
+              this.frameDurations = this.frameDurations.slice(framesToTrim, this.frameDurations.length - framesToTrim);
+              const minFrameDuration = Math.min(...this.frameDurations);
+              const maxFrameDuration = Math.max(...this.frameDurations);
+              if (maxFrameDuration - minFrameDuration <= FrameRateEstimator.MAX_ALLOWED_FRAMETIME_FLAKINESS) {
+                const medianFrameDuration = this.frameDurations[Math.trunc(this.frameDurations.length / 2)];
+                const measuredFps = 1000 / medianFrameDuration;
+                for (const fpsOption of FrameRateEstimator.FPS_OPTIONS) {
+                  if (Math.abs(measuredFps - fpsOption) <= FrameRateEstimator.MAX_ALLOWED_FPS_DEVIATION) {
+                    this.estimatedRealFps = fpsOption;
+                    break;
+                  }
+                }
+              }
+              this.clearSamples();
+          }
+        }
+        this.lastFrameTimeMs = timestampMs;
+        return this.estimatedRealFps;
+      }
+
+      clearSamples() {
+        this.startTimeMs = null;
+        this.lastFrameTimeMs = null;
+        this.frameDurations = [];
+      }
+    }
+
+    function pad2(num) {
+      return num < 10 ? '0' + String(num) : String(num);
+    }
+
+    function pad3(num) {
+      if (num < 10) {
+        return '00' + String(num);
+      } else if (num < 100) {
+        return '0' + String(num);
+      } else {
+        return String(num);
+      }
+    }
+
+    function formatTimezone(offset) {
+      offset = -offset;
+      let sign = offset >= 0 ? '+' : '-';
+      offset = Math.abs(offset);
+      const hour = pad2(Math.floor(offset / 60));
+      const minute = pad2(offset % 60);
+      return `${sign}${hour}:${minute}`;
+    }
+
+    function formatFrameId(milliseconds, frameRate) {
+      const frameId = Math.trunc(milliseconds * frameRate / 1000);
+      return frameRate >= 100 ? pad3(frameId) : frameRate >= 10 ? pad2(frameId) : String(frameId);
+    }
+
+    const display = window.document.getElementById('display');
+    const fpsEstimator = new FrameRateEstimator();
+    const redraw = timestamp => {
+      const frameTime = new Date();
+      const frameRate = fpsEstimator.newFrame(timestamp);
+      let text = `${pad2(frameTime.getFullYear())}-${pad2(frameTime.getMonth() + 1)}-${pad2(frameTime.getDate())}` +
+        `T${pad2(frameTime.getHours())}:${pad2(frameTime.getMinutes())}:${pad2(frameTime.getSeconds())}.${pad3(frameTime.getMilliseconds())}` +
+        `${formatTimezone(frameTime.getTimezoneOffset())}`;
+      if (frameRate !== null) {
+        text += ` F${formatFrameId(frameTime.getMilliseconds(), frameRate)}/${frameRate}`;
+      } else {
+        text += ' FN/A';
+      }
+      display.innerText = text;
+      window.requestAnimationFrame(redraw);
+    };
+    window.addEventListener('load', (_, event) => {
+      window.requestAnimationFrame(redraw);
+    });
+  </script>
+</body>
+
+</html>
